@@ -33,20 +33,24 @@ import MSAL
 class ViewController: UIViewController, UITextFieldDelegate, URLSessionDelegate {
     
     // Update the below to your client ID you received in the portal. The below is for running the demo only
-    let kClientID = "66855f8a-60cd-445e-a9bb-8cd8eadbd3fa"
+    let kClientID = "45c92eb2-34ea-4f81-9a05-21e9d062ac67"
     let kGraphEndpoint = "https://graph.microsoft.com/"
-    let kAuthority = "https://login.microsoftonline.com/common"
+    let kAuthority = "https://login.microsoftonline.com/053b0656-0f4f-4d2e-8c3e-6f812f1d6e01"
     let kRedirectUri = "msauth.com.microsoft.identitysample.MSALiOS://auth"
+    let URI = ""
     
     let kScopes: [String] = ["user.read"]
+    let apiScopes: [String] = ["api://82a8febb-203f-4048-bdcd-772294655e52/Api.Use"]
     
     var accessToken = String()
+    var APIaccessToken = String()
     var applicationContext : MSALPublicClientApplication?
     var webViewParamaters : MSALWebviewParameters?
 
     var loggingText: UITextView!
     var signOutButton: UIButton!
     var callGraphButton: UIButton!
+    var callAPIButton: UIButton!
     var usernameLabel: UILabel!
     
     var currentAccount: MSALAccount?
@@ -158,7 +162,7 @@ extension ViewController {
 }
 
 
-// MARK: Acquiring and using token
+// MARK: Acquiring and using token(s)
 
 extension ViewController {
     
@@ -166,28 +170,44 @@ extension ViewController {
      This will invoke the authorization flow.
      */
     
-    @objc func callGraphAPI(_ sender: UIButton) {
-        
+    @objc func callAPI(_ sender: UIButton) {
         self.loadCurrentAccount { (account) in
-            
             guard let currentAccount = account else {
-                
                 // We check to see if we have a current logged in account.
                 // If we don't, then we need to sign someone in.
-                self.acquireTokenInteractively()
+                self.acquireTokenInteractively(scopes: self.kScopes)
+                self.getContentWithToken(URI: "https://graph.microsoft.com/v1.0/me")
                 return
             }
-            
-            self.acquireTokenSilently(currentAccount)
+
+            self.acquireTokenSilently(currentAccount, scopes: self.kScopes)
+            self.getContentWithToken(URI: "https://graph.microsoft.com/v1.0/me")
         }
     }
     
-    func acquireTokenInteractively() {
+    @objc func callWebAPI(_ sender: UIButton) {
+        self.loadCurrentAccount { (account) in
+
+            guard let currentAccount = account else {
+
+                // We check to see if we have a current logged in account.
+                // If we don't, then we need to sign someone in.
+                self.acquireTokenInteractively(scopes: self.apiScopes)
+                self.getContentWithToken(URI: "https://api.ipify.org?format=json")
+                return
+            }
+
+            self.acquireTokenSilently(currentAccount, scopes: self.apiScopes)
+            self.getContentWithToken(URI: "https://api.ipify.org?format=json")
+        }
+    }
+    
+    func acquireTokenInteractively(scopes : [String]) {
         
         guard let applicationContext = self.applicationContext else { return }
         guard let webViewParameters = self.webViewParamaters else { return }
 
-        let parameters = MSALInteractiveTokenParameters(scopes: kScopes, webviewParameters: webViewParameters)
+        let parameters = MSALInteractiveTokenParameters(scopes: scopes, webviewParameters: webViewParameters)
         parameters.promptType = .selectAccount
         
         applicationContext.acquireToken(with: parameters) { (result, error) in
@@ -206,12 +226,12 @@ extension ViewController {
             
             self.accessToken = result.accessToken
             self.updateLogging(text: "Access token is \(self.accessToken)")
+            UIPasteboard.general.string = "Access token is \(self.accessToken)"
             self.updateCurrentAccount(account: result.account)
-            self.getContentWithToken()
         }
     }
     
-    func acquireTokenSilently(_ account : MSALAccount!) {
+    func acquireTokenSilently(_ account : MSALAccount!, scopes : [String]) {
         
         guard let applicationContext = self.applicationContext else { return }
         
@@ -228,7 +248,7 @@ extension ViewController {
          flow completes, or encounters an error.
          */
         
-        let parameters = MSALSilentTokenParameters(scopes: kScopes, account: account)
+        let parameters = MSALSilentTokenParameters(scopes: scopes, account: account)
         
         applicationContext.acquireTokenSilent(with: parameters) { (result, error) in
             
@@ -245,7 +265,7 @@ extension ViewController {
                     if (nsError.code == MSALError.interactionRequired.rawValue) {
                         
                         DispatchQueue.main.async {
-                            self.acquireTokenInteractively()
+                            self.acquireTokenInteractively(scopes : scopes)
                         }
                         return
                     }
@@ -263,13 +283,18 @@ extension ViewController {
             
             self.accessToken = result.accessToken
             self.updateLogging(text: "Refreshed Access token is \(self.accessToken)")
+            UIPasteboard.general.string = "Access token is \(self.accessToken)"
             self.updateSignOutButton(enabled: true)
-            self.getContentWithToken()
         }
     }
     
+    
     func getGraphEndpoint() -> String {
         return kGraphEndpoint.hasSuffix("/") ? (kGraphEndpoint + "v1.0/me/") : (kGraphEndpoint + "/v1.0/me/");
+    }
+    
+    func getAPIEndpoint() -> String {
+        return "https://icanhazip.com"
     }
     
     /**
@@ -277,15 +302,16 @@ extension ViewController {
      built in URLSession to create a connection.
      */
     
-    func getContentWithToken() {
+    func getContentWithToken(URI: String) {
         
         // Specify the Graph API endpoint
-        let graphURI = getGraphEndpoint()
-        let url = URL(string: graphURI)
+        //URI = getAPI
+        let url = URL(string: URI)
         var request = URLRequest(url: url!)
         
         // Set the Authorization header for the request. We use Bearer tokens, so we specify Bearer + the token we got from the result
         request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
+        //request.setValue("application/json", forHTTPHeaderField: "Accept")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             
@@ -300,11 +326,10 @@ extension ViewController {
                 return
             }
             
-            self.updateLogging(text: "Result from Graph: \(result))")
+            self.updateLogging(text: "Result from API Call: \(result))")
             
             }.resume()
     }
-
 }
 
 
@@ -346,6 +371,7 @@ extension ViewController {
             
             self.updateLogging(text: "Account signed out. Updating UX")
             self.accessToken = ""
+            self.APIaccessToken = ""
             self.updateCurrentAccount(account: nil)
             
             if let completion = completion {
@@ -415,13 +441,27 @@ extension ViewController {
         callGraphButton.translatesAutoresizingMaskIntoConstraints = false
         callGraphButton.setTitle("Call Microsoft Graph API", for: .normal)
         callGraphButton.setTitleColor(.blue, for: .normal)
-        callGraphButton.addTarget(self, action: #selector(callGraphAPI(_:)), for: .touchUpInside)
+        callGraphButton.addTarget(self, action: #selector(callAPI(_:)), for: .touchUpInside)
         self.view.addSubview(callGraphButton)
-        
+
         callGraphButton.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
         callGraphButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 120.0).isActive = true
         callGraphButton.widthAnchor.constraint(equalToConstant: 300.0).isActive = true
         callGraphButton.heightAnchor.constraint(equalToConstant: 50.0).isActive = true
+        
+        // Add call API button
+        callAPIButton  = UIButton()
+        callAPIButton.translatesAutoresizingMaskIntoConstraints = false
+        callAPIButton.setTitle("Call Custom API", for: .normal)
+        callAPIButton.setTitleColor(.blue, for: .normal)
+        callAPIButton.addTarget(self, action: #selector(callWebAPI(_:)), for: .touchUpInside)
+        self.view.addSubview(callAPIButton)
+        
+        callAPIButton.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
+        callAPIButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 170.0).isActive = true
+        callAPIButton.widthAnchor.constraint(equalToConstant: 300.0).isActive = true
+        callAPIButton.heightAnchor.constraint(equalToConstant: 50.0).isActive = true
+        
         
         // Add sign out button
         signOutButton = UIButton()
@@ -433,7 +473,7 @@ extension ViewController {
         self.view.addSubview(signOutButton)
         
         signOutButton.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
-        signOutButton.topAnchor.constraint(equalTo: callGraphButton.bottomAnchor, constant: 10.0).isActive = true
+        signOutButton.topAnchor.constraint(equalTo: callAPIButton.bottomAnchor, constant: 10.0).isActive = true
         signOutButton.widthAnchor.constraint(equalToConstant: 150.0).isActive = true
         signOutButton.heightAnchor.constraint(equalToConstant: 50.0).isActive = true
         
